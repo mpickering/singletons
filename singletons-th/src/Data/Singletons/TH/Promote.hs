@@ -10,8 +10,8 @@ type level. It is an internal module to the singletons-th package.
 module Data.Singletons.TH.Promote where
 
 import Language.Haskell.TH hiding ( Q, cxt )
-import Language.Haskell.TH.Syntax ( NameSpace(..), Quasi(..), Uniq )
-import Language.Haskell.TH.Desugar
+import Language.Haskell.TH.Syntax ( NameSpace(..), Quasi(..) )
+import Language.Haskell.TH.Desugar hiding (newUniqueName)
 import qualified Language.Haskell.TH.Desugar.OMap.Strict as OMap
 import Language.Haskell.TH.Desugar.OMap.Strict (OMap)
 import qualified Language.Haskell.TH.Desugar.OSet as OSet
@@ -202,17 +202,17 @@ promoteDecs raw_decls = do
   mapM_ (promoteInstanceDec orig_meth_sigs cls_tvbs_map) insts
 
 -- curious about ALetDecEnv? See the LetDecEnv module for an explanation.
-promoteLetDecs :: Maybe Uniq -- let-binding unique (if locally bound)
+promoteLetDecs :: Maybe UniqueId -- let-binding identifier (if locally bound)
                -> [DLetDec] -> PrM ([LetBind], ALetDecEnv)
-promoteLetDecs mb_let_uniq decls = do
+promoteLetDecs mb_let_id decls = do
   opts <- getOptions
   let_dec_env <- buildLetDecEnv decls
   all_locals <- allLocals
   let binds = [ (name, foldType (DConT sym) (map DVarT all_locals))
               | (name, _) <- OMap.assocs $ lde_defns let_dec_env
-              , let proName = promotedValueName opts name mb_let_uniq
+              , let proName = promotedValueName opts name mb_let_id
                     sym = defunctionalizedName opts proName (length all_locals) ]
-  (decs, let_dec_env') <- letBind binds $ promoteLetDecEnv mb_let_uniq let_dec_env
+  (decs, let_dec_env') <- letBind binds $ promoteLetDecEnv mb_let_id let_dec_env
   emitDecs decs
   return (binds, let_dec_env' { lde_proms = OMap.fromList binds })
 
@@ -587,18 +587,18 @@ substitute in the kinds of the instance itself to determine the kinds of
 promoted method implementations like MHelper2.
 -}
 
-promoteLetDecEnv :: Maybe Uniq -> ULetDecEnv -> PrM ([DDec], ALetDecEnv)
-promoteLetDecEnv mb_let_uniq (LetDecEnv { lde_defns = value_env
+promoteLetDecEnv :: Maybe UniqueId -> ULetDecEnv -> PrM ([DDec], ALetDecEnv)
+promoteLetDecEnv mb_let_id (LetDecEnv { lde_defns = value_env
                                         , lde_types = type_env
                                         , lde_infix = fix_env }) = do
-  infix_decls <- mapMaybeM (uncurry (promoteInfixDecl mb_let_uniq)) $
+  infix_decls <- mapMaybeM (uncurry (promoteInfixDecl mb_let_id)) $
                  OMap.assocs fix_env
 
     -- promote all the declarations, producing annotated declarations
   let (names, rhss) = unzip $ OMap.assocs value_env
   (pro_decs, defun_decss, ann_rhss)
     <- fmap unzip3 $
-       zipWithM (promoteLetDecRHS LetBindingRHS type_env fix_env mb_let_uniq)
+       zipWithM (promoteLetDecRHS LetBindingRHS type_env fix_env mb_let_id)
                 names rhss
 
   emitDecs $ concat defun_decss
@@ -615,8 +615,8 @@ promoteLetDecEnv mb_let_uniq (LetDecEnv { lde_defns = value_env
 
 -- Promote a fixity declaration.
 promoteInfixDecl :: forall q. OptionsMonad q
-                 => Maybe Uniq -> Name -> Fixity -> q (Maybe DDec)
-promoteInfixDecl mb_let_uniq name fixity = do
+                 => Maybe UniqueId -> Name -> Fixity -> q (Maybe DDec)
+promoteInfixDecl mb_let_id name fixity = do
   opts <- getOptions
   fld_sels <- qIsExtEnabled LangExt.FieldSelectors
   mb_ns <- reifyNameSpace name
@@ -661,7 +661,7 @@ promoteInfixDecl mb_let_uniq name fixity = do
     promote_val = do
       opts <- getOptions
       let promoted_name :: Name
-          promoted_name = promotedValueName opts name mb_let_uniq
+          promoted_name = promotedValueName opts name mb_let_id
       if nameBase name == nameBase promoted_name && genQuotedDecs opts
          then never_mind
          else finish promoted_name
@@ -698,21 +698,21 @@ data LetDecRHSSort
 promoteLetDecRHS :: LetDecRHSSort
                  -> OMap Name DType      -- local type env't
                  -> OMap Name Fixity     -- local fixity env't
-                 -> Maybe Uniq           -- let-binding unique (if locally bound)
+                 -> Maybe UniqueId       -- let-binding identifier (if locally bound)
                  -> Name                 -- name of the thing being promoted
                  -> ULetDecRHS           -- body of the thing
                  -> PrM ( [DDec]        -- promoted type family dec, plus the
                                         -- SAK dec (if one exists)
                         , [DDec]        -- defunctionalization
                         , ALetDecRHS )  -- annotated RHS
-promoteLetDecRHS rhs_sort type_env fix_env mb_let_uniq name let_dec_rhs = do
+promoteLetDecRHS rhs_sort type_env fix_env mb_let_id name let_dec_rhs = do
   all_locals <- allLocals
   case let_dec_rhs of
     UValue exp -> do
       (m_ldrki, ty_num_args) <- promote_let_dec_ty all_locals 0
       if ty_num_args == 0
       then do
-        prom_fun_lhs <- promoteLetDecName mb_let_uniq name m_ldrki all_locals
+        prom_fun_lhs <- promoteLetDecName mb_let_id name m_ldrki all_locals
         promote_let_dec_rhs all_locals m_ldrki 0 (promoteExp exp)
                             (\exp' -> [DTySynEqn Nothing prom_fun_lhs exp'])
                             AValue
@@ -730,7 +730,7 @@ promoteLetDecRHS rhs_sort type_env fix_env mb_let_uniq name let_dec_rhs = do
       numArgs <- count_args clauses
       (m_ldrki, ty_num_args) <- promote_let_dec_ty all_locals numArgs
       expClauses <- mapM (etaContractOrExpand ty_num_args numArgs) clauses
-      let promote_clause = promoteClause mb_let_uniq name m_ldrki all_locals
+      let promote_clause = promoteClause mb_let_id name m_ldrki all_locals
       promote_let_dec_rhs all_locals m_ldrki ty_num_args
                           (mapAndUnzipM promote_clause expClauses)
                           id (AFunction ty_num_args)
@@ -753,7 +753,7 @@ promoteLetDecRHS rhs_sort type_env fix_env mb_let_uniq name let_dec_rhs = do
                         promote_thing mk_prom_eqns mk_alet_dec_rhs = do
       opts <- getOptions
       tyvarNames <- replicateM ty_num_args (qNewName "a")
-      let proName    = promotedValueName opts name mb_let_uniq
+      let proName    = promotedValueName opts name mb_let_id
           local_tvbs = map (`DPlainTV` BndrReq) all_locals
           m_fixity   = OMap.lookup name fix_env
 
@@ -1018,8 +1018,8 @@ Note that we do not bind @b here. The `tvbSpecsToBndrVis` function is
 responsible for filtering out inferred type variable binders.
 -}
 
-promoteClause :: Maybe Uniq
-                 -- ^ Let-binding unique (if locally bound)
+promoteClause :: Maybe UniqueId
+                 -- ^ Let-binding identifier (if locally bound)
               -> Name
                  -- ^ Name of the function being promoted
               -> Maybe LetDecRHSKindInfo
@@ -1027,7 +1027,7 @@ promoteClause :: Maybe Uniq
               -> [Name]
                  -- ^ The local variables currently in scope
               -> DClause -> PrM (DTySynEqn, ADClause)
-promoteClause mb_let_uniq name m_ldrki all_locals (DClause pats exp) = do
+promoteClause mb_let_id name m_ldrki all_locals (DClause pats exp) = do
   -- promoting the patterns creates variable bindings. These are passed
   -- to the function promoted the RHS
   ((types, pats'), prom_pat_infos) <- evalForPair $ mapAndUnzipM promotePat pats
@@ -1047,7 +1047,7 @@ promoteClause mb_let_uniq name m_ldrki all_locals (DClause pats exp) = do
   (ty, ann_exp) <- scopedBind sig_kvs $
                    lambdaBind new_vars $
                    promoteExp exp
-  pro_clause_fun <- promoteLetDecName mb_let_uniq name m_ldrki all_locals
+  pro_clause_fun <- promoteLetDecName mb_let_id name m_ldrki all_locals
   return ( DTySynEqn Nothing (foldType pro_clause_fun types_w_kinds) ty
          , ADClause new_vars pats' ann_exp )
 
@@ -1156,8 +1156,8 @@ promoteExp (DCaseE exp matches) = do
   return ( applied_case
          , ADCaseE ann_exp ann_matches applied_case )
 promoteExp (DLetE decs exp) = do
-  unique <- qNewUnique
-  (binds, ann_env) <- promoteLetDecs (Just unique) decs
+  letId <- nextUniqueId
+  (binds, ann_env) <- promoteLetDecs (Just letId) decs
   (exp', ann_exp) <- letBind binds $ promoteExp exp
   return (exp', ADLetE ann_env ann_exp)
 promoteExp (DSigE exp ty) = do
@@ -1207,8 +1207,8 @@ promoteLitPat lit =
 -- Data.Singletons.TH.Promote.Monad.) Otherwise, it will include any local
 -- variables that it closes over as explicit arguments.
 promoteLetDecName ::
-     Maybe Uniq
-     -- ^ Let-binding unique (if locally bound)
+     Maybe UniqueId
+     -- ^ Let-binding identifier (if locally bound)
   -> Name
      -- ^ Name of the function being promoted
   -> Maybe LetDecRHSKindInfo
@@ -1216,9 +1216,9 @@ promoteLetDecName ::
   -> [Name]
      -- ^ The local variables currently in scope
   -> PrM DType
-promoteLetDecName mb_let_uniq name m_ldrki all_locals = do
+promoteLetDecName mb_let_id name m_ldrki all_locals = do
   opts <- getOptions
-  let proName = promotedValueName opts name mb_let_uniq
+  let proName = promotedValueName opts name mb_let_id
       type_args =
         case m_ldrki of
           Just (LDRKI m_sak tvbs _ _)
@@ -1247,7 +1247,7 @@ promoteLetDecName mb_let_uniq name m_ldrki all_locals = do
   pure $ applyDType (DConT proName) type_args
 
 -- Construct a 'DTypeFamilyHead' that closes over some local variables. We
--- apply `noExactName` to each local variable to avoid GHC#11812.
+-- apply `noExactTyVars` to each local variable to avoid GHC#11812.
 -- See also Note [Pitfalls of NameU/NameL] in Data.Singletons.TH.Util.
 dTypeFamilyHead_with_locals ::
      Name
@@ -1270,7 +1270,7 @@ dTypeFamilyHead_with_locals tf_nm local_nms arg_tvbs res_sig =
     -- to any of the argument/result types. The latter are much more likely to
     -- show up in the Haddocks, and `noExactName` produces incredibly long Names
     -- that are much harder to read in the rendered Haddocks.
-    local_nms' = map noExactName local_nms
+    local_nms' = runFreshen (mapM freshenName local_nms)
 
     -- Ensure that all references to local_nms are substituted away.
     subst1 = Map.fromList $

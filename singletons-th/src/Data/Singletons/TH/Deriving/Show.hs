@@ -17,7 +17,7 @@ module Data.Singletons.TH.Deriving.Show (
   ) where
 
 import Language.Haskell.TH.Syntax hiding (showName)
-import Language.Haskell.TH.Desugar
+import Language.Haskell.TH.Desugar hiding (newUniqueName)
 import Data.Singletons.TH.Deriving.Infer
 import Data.Singletons.TH.Deriving.Util
 import Data.Singletons.TH.Names

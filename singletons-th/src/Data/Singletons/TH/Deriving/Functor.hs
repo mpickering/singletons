@@ -18,7 +18,7 @@ import Data.Singletons.TH.Deriving.Util
 import Data.Singletons.TH.Names
 import Data.Singletons.TH.Syntax
 import Data.Singletons.TH.Util
-import Language.Haskell.TH.Desugar
+import Language.Haskell.TH.Desugar hiding (newUniqueName)
 
 mkFunctorInstance :: forall q. DsMonad q => DerivDesc q
 mkFunctorInstance mb_ctxt ty dd@(DataDecl _ _ _ cons) = do

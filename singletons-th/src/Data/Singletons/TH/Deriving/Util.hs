@@ -18,7 +18,7 @@ import Control.Monad
 import Data.Singletons.TH.Names
 import Data.Singletons.TH.Syntax
 import Data.Singletons.TH.Util
-import Language.Haskell.TH.Desugar
+import Language.Haskell.TH.Desugar hiding (newUniqueName)
 import qualified Language.Haskell.TH.Desugar.OSet as OSet
 import Language.Haskell.TH.Syntax
 

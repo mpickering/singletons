@@ -13,7 +13,7 @@
 
 module Data.Singletons.TH.Deriving.Ord ( mkOrdInstance ) where
 
-import Language.Haskell.TH.Desugar
+import Language.Haskell.TH.Desugar hiding (newUniqueName)
 import Language.Haskell.TH.Syntax
 import Data.Singletons.TH.Deriving.Infer
 import Data.Singletons.TH.Deriving.Util

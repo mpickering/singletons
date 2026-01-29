@@ -17,7 +17,8 @@ import Data.Singletons.TH.Deriving.Infer
 import Data.Singletons.TH.Deriving.Util
 import Data.Singletons.TH.Names
 import Data.Singletons.TH.Syntax
-import Language.Haskell.TH.Desugar
+import Data.Singletons.TH.Util
+import Language.Haskell.TH.Desugar hiding (newUniqueName)
 
 mkTraversableInstance :: forall q. DsMonad q => DerivDesc q
 mkTraversableInstance mb_ctxt ty dd@(DataDecl _ _ _ cons) = do

@@ -18,7 +18,7 @@ import Data.Singletons.TH.Deriving.Util
 import Data.Singletons.TH.Names
 import Data.Singletons.TH.Syntax
 import Data.Singletons.TH.Util
-import Language.Haskell.TH.Desugar
+import Language.Haskell.TH.Desugar hiding (newUniqueName)
 import Language.Haskell.TH.Syntax
 
 mkEqInstance :: DsMonad q => DerivDesc q
